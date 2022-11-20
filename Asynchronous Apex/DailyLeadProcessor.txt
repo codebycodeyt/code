@@ -11,3 +11,5 @@ global class DailyLeadProcessor implements Schedulable {
     }
 
 }
+
+RUN IN API VERSION 52 /// DELETE THIS LINE
