@@ -1,24 +1,39 @@
 @isTest
-public class DailyLeadProcessorTest {
-//Seconds Minutes Hours Day_of_month Month Day_of_week optional_year
-    public static String CRON_EXP = '0 0 0 15 3 7 2022';
-   
-    static testmethod void testScheduledJob(){
-        List<Lead> leads = new List<Lead>();
+private class DailyLeadProcessorTest {
+    @testSetup
+   static void setup()
+   {
+       List<Lead> lstOfLead = new List<Lead>();
+       for(Integer i = 1; i<= 200; i++)
+       {
+           Lead ld = new Lead(Company = 'Comp' +i,LastName = 'LN' + i, Status = 'Working - Contacted');
+           lstofLead.add(ld);  
+       }
+       Insert lstOfLead;
+   }
+    static testmethod void testDailyLeadProcessorScheduledJob() {
        
-        for(Integer i = 0; i < 200; i++){
-            Lead lead = new Lead(LastName = 'Test ' + i, LeadSource = '', Company = 'Test Company ' + i, Status = 'Open - Not Contacted');
-            leads.add(lead);
-        }
        
-        insert leads;
+        
+        String sch = '0 5 12 * * ?';
+           
+          Test.startTest(); 
+           String jobId = System.schedule('ScheduleApexText', sch, new DailyLeadProcessor());         
+    }
+}
+
+global class DailyLeadProcessor implements Schedulable {
+ global void execute(SchedulableContext ctx) {
+        List<Lead> lList = [Select Id, LeadSource from Lead where LeadSource = null];
        
-        Test.startTest();
-        // Schedule the test job
-        String jobId = System.schedule('Update LeadSource to DreamForce', CRON_EXP, new DailyLeadProcessor());
-       
-        // Stopping the test will run the job synchronously
-        Test.stopTest();
+        if(!lList.isEmpty()) {
+   for(Lead l: lList) {
+    l.LeadSource = 'Dreamforce';
+   }
+   update lList;
+  }
     }
 
 }
+
+RUN IN API VERSION 52 /// DELETE THIS LINE
