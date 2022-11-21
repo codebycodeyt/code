@@ -1,0 +1,84 @@
+public class MaintenanceRequestHelper {
+
+	public static final Set<String> validRequestTypes = new Set<String>{'Repair', 'Routine Maintenance'};
+    public static final String closedStatus = 'closed';
+    public static final String newCaseStatus = 'New';
+	public static final String newCaseType = 'Routine Maintenance';
+	public static final String newCaseSubject = 'Routine Check';
+
+    public static void updateWorkOrders(Map<Id, SObject> newSoMap){
+        Map<Id, Case> caseMap = (Map<Id, Case>) newSoMap;
+        Map<Integer, Case> insertCaseMap = new Map<Integer, Case>();
+        Map<Integer, List<Work_Part__c>> insertWorkPartMap = new Map<Integer, List<Work_Part__c>>();
+        List<Work_Part__c> insertWorkPartList = new List<Work_Part__c>();
+        Map<Id, List<Work_Part__c>> reqWorkPartMap = new Map<Id, List<Work_Part__c>>();
+        Set<Id> casesToProcess = new Set<Id>();
+        Set<Id> equipmentsToProcess = new Set<Id>();
+        Map<Id, Id> idWorkPartEquipMap = new Map<Id, Id>();
+        Map<Id, Product2> equipMap;
+        Integer key = 0;
+
+        for (Case c: caseMap.values()) {
+        	if ( !c.Status.toLowerCase().equals( MaintenanceRequestHelper.closedStatus ) ) { continue; }
+        	else if ( !validRequestTypes.contains( c.Type ) ) { continue; }
+        	else { casesToProcess.add(c.Id); }
+        }
+        System.debug('Cases to Process: ' + casesToProcess);
+
+        if ( casesToProcess.size() == 0 ) { return; }
+
+        for (Work_Part__c wp: [Select Id, Name, Equipment__c, Maintenance_Request__c, Quantity__c From Work_Part__c Where Maintenance_Request__c IN :casesToProcess]) {
+        	equipmentsToProcess.add(wp.Equipment__c);
+        	idWorkPartEquipMap.put(wp.Id, wp.Equipment__c);
+        	List<Work_Part__c> tmpWpList = reqWorkPartMap.get(wp.Maintenance_Request__c);
+        	if ( tmpWpList == null ) { tmpWpList = new List<Work_Part__c>(); }
+        	tmpWpList.add(wp);
+        	reqWorkPartMap.put(wp.Maintenance_Request__c, tmpWpList);
+        }
+
+        equipMap = new Map<Id, Product2>([Select Id, Name, Cost__c, Current_Inventory__c, Lifespan_Months__c, Maintenance_Cycle__c, Replacement_Part__c, Warehouse_SKU__c From Product2 Where Id IN :equipmentsToProcess]);
+    	
+    	for (Id caseId: casesToProcess) {
+    		List<Work_Part__c> partList = reqWorkPartMap.get(caseId);
+    		List<Work_Part__c> insertPartList = new List<Work_Part__c>();
+
+    		Integer min;
+    		if ( partList == null || partList.size() == 0 ) { partList = new List<Work_Part__c>(); min = 0; }
+    		for (Work_Part__c wp: partList) {
+    			Product2 equipment = equipMap.get(wp.Equipment__c);
+    			Integer lifeSpan = (Integer)equipment.Maintenance_Cycle__c;
+    			if ( (min == null) || (lifeSpan < min) ) { min = lifeSpan; }
+    			Work_Part__c newWp = new Work_Part__c();
+    			newWp.Equipment__c = wp.Equipment__c;
+    			newWp.Quantity__c = wp.Quantity__c;
+    			insertPartList.add(newWp);
+    		}
+    		Case oldCase = caseMap.get(caseId);
+    		Case newCase = new Case();
+    		newCase.Type = MaintenanceRequestHelper.newCaseType;
+    		newCase.Vehicle__c = oldCase.Vehicle__c;
+    		newCase.Equipment__c = oldCase.Equipment__c;
+    		//newCase.Product__c = oldCase.Product__c;
+    		newCase.Subject = newCaseSubject + ' - ' + newCase.Vehicle__c + ' - ' + newCase.Product__c;
+    		newCase.Date_Reported__c = System.today();
+    		newCase.Date_Due__c = System.today().addDays(min);
+    		newCase.Status = newCaseStatus;
+    		insertCaseMap.put(key, newCase);
+    		insertWorkPartMap.put(key, insertPartList);
+    	}
+    	System.debug('Cases to Insert: ' + insertCaseMap);
+
+    	insert insertCaseMap.values();
+
+    	for (Integer i: insertCaseMap.keySet()) {
+    		List<Work_Part__c> insertPartList = insertWorkPartMap.get(i);
+    		Case newC = insertCaseMap.get(i);
+    		for (Work_Part__c newWp: insertPartList) {
+    			newWp.Maintenance_Request__c = newC.Id;
+    			insertWorkPartList.add(newWp);
+    		}
+    	}
+    	insert insertWorkPartList;
+    }        
+    
+}
